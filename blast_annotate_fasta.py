@@ -223,10 +223,10 @@ def main():
         rhandle.write("library(magrittr)\n")
         rhandle.write("library(tidyr)\n")
         rhandle.write("MM<-dplyr::as_tibble(read.csv(\""+str(output_rep_file)+"\",header=T,sep=\"\\t\",comment.char=\"?\"))\n")
-        rhandle.write("MM %>% dplyr::group_by(Variant) %>% arrange(Product,Variant) %>% dplyr::mutate(Annot.group = data.table::rleid(Product)) %>%\n")
+        rhandle.write("MM %>% dplyr::group_by(Variant) %>% arrange(MatchLength,Product,Variant) %>% dplyr::mutate(Annot.group = data.table::rleid(Product)) %>%\n")
         rhandle.write("dplyr::mutate(Product = tidyr::replace_na(Product, \"\")) %>% dplyr::mutate(GeneID = tidyr::replace_na(GeneID, \"\")) %>%\n")
-        rhandle.write("dplyr::arrange(Variant,Annot.group) %>% dplyr::mutate(MostCommonProductOtherGenomes=names(rev(sort(table( Product )))[1]) ) %>%\n")
-        rhandle.write("dplyr::arrange(desc(GeneID),MostCommonProductOtherGenomes) %>% arrange(Variant,desc(Product),Evalue) %>%\n")
+        rhandle.write("dplyr::arrange(MatchLength,Variant,Annot.group) %>% dplyr::mutate(MostCommonProductOtherGenomes=names(rev(sort(table( Product )))[1]) ) %>%\n")
+        rhandle.write("dplyr::arrange(desc(GeneID),MostCommonProductOtherGenomes) %>% arrange(MatchLength,Variant,Product,Evalue) %>%\n")
         rhandle.write("dplyr::select(-Annot.group) %>% dplyr::mutate(MostCommonProductOtherGenomes=gsub(\"(^[[:alpha:]])\", \"\\\\U\\\\1\", MostCommonProductOtherGenomes, perl=TRUE)) %>%\n")
         rhandle.write("dplyr::mutate(Product=gsub(\"(^[[:alpha:]])\", \"\\\\U\\\\1\", Product, perl=TRUE)) %>% dplyr::filter(row_number()==1) %>%\n")
         rhandle.write("dplyr::mutate(MostCommonProductOtherGenomes=ifelse(MostCommonProductOtherGenomes==\"\",\"Intergenic region\",MostCommonProductOtherGenomes)) %>%\n")
@@ -245,7 +245,7 @@ def main():
     cmd.append(tmp_rscript_file)
     cmd.append(rand_str_val+"*")
     cmd = " ".join(cmd)
-    retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
+    ####retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
 
     variantList = ["Variant"]
     for r in SeqIO.parse(seq_kmers,"fasta"):
