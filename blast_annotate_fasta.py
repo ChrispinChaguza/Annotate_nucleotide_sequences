@@ -10,7 +10,7 @@ import argparse
 
 def main():
     options=argparse.ArgumentParser(sys.argv[0],
-        description='Script for annotating multiple sequences in fasta format using a list of reference genomes in GenBank format (downloaded from NCBI or in NCBI-compliant format)',
+        description='Script for annotating multiple sequences in fasta format using a list of reference genomes in GenBank or EMBL format (downloaded from NCBI or in NCBI-compliant format)',
         prefix_chars='-',
         add_help=True,
         epilog='Written by Chrispin Chaguza, Yale School of Public Health, Yale University, 2021')
@@ -20,29 +20,48 @@ def main():
         metavar='input_references',dest='input_references',help='Input file containing locations to the reference genomes to be used for annotation (one per line)')
     options.add_argument('-o','--output',action='store',required=True,nargs=1,
         metavar='output_annotations_file',dest='output_annotations_file',help='Output file containing the annotated nucleotide sequences')
+    options.add_argument('-k','--keep',action='store_true',default=False,
+        dest='keep',help='Boolean option to indicate whether to remove or keep the intermediate files')
 
     options=options.parse_args()
 
     seq_kmers=options.input_sequences[0:][0]
     gb_files=options.input_references[0:][0]
 
+    rand_str_val="tmp."+str(randint(0,10000))+"."+str(randint(0,10000))
+    tmp_dir = "tmp000_"+rand_str_val+"/"
+    tmp_blast_output = tmp_dir+"tmp."+rand_str_val+".bl.txt"
+    tmp_genome_names = tmp_dir+"tmp."+rand_str_val+".gb.txt"
+    tmp_rscript_file = tmp_dir+"tmp."+rand_str_val+".R"
+
     output_rep_file=options.output_annotations_file[0:][0]
 
-    rand_str_val="tmp."+str(randint(0,10000))+"."+str(randint(0,10000))
+    if os.path.exists(tmp_dir):
+        os.rmdir(tmp_dir)
 
-    tmp_blast_output = "tmp."+rand_str_val+".bl.txt"
-    tmp_genome_names = "tmp."+rand_str_val+".gb.txt"
-    tmp_rscript_file = "tmp."+rand_str_val+".R"
+    os.mkdir(tmp_dir)
 
     with open(tmp_genome_names,"w") as tmp_file:
         max_prog_bar = 1 if len([loopCount for loopCount in open(gb_files,"r")])==0 else len([loopCount for loopCount in open(gb_files,"r")])
-        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 1/6', max=max_prog_bar)
+        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 1/6', max=max_prog_bar)
         for j in [str(r).strip() for r in open(gb_files,"r")]:
-            in_seq_data = SeqIO.read(j,"genbank")
-            out_seq_data = open(str(in_seq_data.id)+".fasta","w")
-            SeqIO.write(in_seq_data,out_seq_data,"fasta")
-            tmp_file.write(str(in_seq_data.id)+".fasta\n")
-            status.next()
+            try:
+                in_seq_data = SeqIO.read(j,"genbank")
+                out_seq_data = open(tmp_dir+str(in_seq_data.id)+".fasta","w")
+                SeqIO.write(in_seq_data,out_seq_data,"fasta")
+                tmp_file.write(tmp_dir+str(in_seq_data.id)+".fasta\n")
+                status.next()
+            except:
+                try:
+                    in_seq_data = SeqIO.read(j,"embl")
+                    out_seq_data = open(tmp_dir+str(in_seq_data.id)+".fasta","w")
+                    SeqIO.write(in_seq_data,out_seq_data,"fasta")
+                    tmp_file.write(tmp_dir+str(in_seq_data.id)+".fasta\n")
+                    status.next()
+                except:
+                    print("\nERROR: Check whether this file exists "+str(j)+" and is in either GenBank or EMBL format (ignore if the job was canced by the user!)")
+                    sys.exit()
+
     status.next()
     status.finish()
 
@@ -52,14 +71,14 @@ def main():
     cmd.append("|")
     cmd.append("tr \"\n\" \" \"`")
     cmd.append(">")
-    cmd.append(rand_str_val+"db")
+    cmd.append(str(tmp_dir)+str(rand_str_val)+".db")
     cmd = " ".join(cmd)
     retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
 
     cmd = []
     cmd.append("makeblastdb")
     cmd.append("-in")
-    cmd.append(rand_str_val+"db")
+    cmd.append(str(tmp_dir)+str(rand_str_val)+".db")
     cmd.append("-dbtype")
     cmd.append("nucl")
     cmd=" ".join(cmd)
@@ -72,17 +91,17 @@ def main():
     retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
     
     max_prog_bar = 1 if len([loopCount for loopCount in SeqIO.parse(seq_kmers,"fasta")])==0 else len([loopCount for loopCount in SeqIO.parse(seq_kmers,"fasta")])
-    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 2/6', max=max_prog_bar)
+    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 2/6', max=max_prog_bar)
     for r in SeqIO.parse(seq_kmers,"fasta"):
-        with open(rand_str_val+"lp","w") as fhandle:
+        with open(str(tmp_dir)+str(rand_str_val)+"lp","w") as fhandle:
             fhandle.write(">"+str(r.id)+"\n"+str(r.seq))
 
         cmd = []
         cmd.append("blastn")
         cmd.append("-db")
-        cmd.append(rand_str_val+"db")
+        cmd.append(str(tmp_dir)+str(rand_str_val)+".db")
         cmd.append("-query")
-        cmd.append(rand_str_val+"lp")
+        cmd.append(str(tmp_dir)+str(rand_str_val)+"lp")
         cmd.append("-task")
         cmd.append("blastn-short")
         cmd.append("-outfmt")
@@ -113,7 +132,7 @@ def main():
 
     with open(gb_files,"r") as gb_fhandle:
         max_prog_bar = 1 if len([loopCount for loopCount in open(gb_files,"r")])==0 else len([loopCount for loopCount in open(gb_files,"r")])
-        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 3/6', max=max_prog_bar)
+        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 3/6', max=max_prog_bar)
         for gb_name in gb_fhandle:
             annotfiles.append(str(gb_name).strip())
             status.next()
@@ -123,7 +142,7 @@ def main():
     db={}
     
     max_prog_bar = 1 if len([loopCount for loopCount in annotfiles])==0 else len([loopCount for loopCount in annotfiles])
-    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 4/6', max=max_prog_bar)
+    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 4/6', max=max_prog_bar)
     for h in annotfiles:
         db[str(h)] = SeqIO.read(h,"genbank")
         status.next()
@@ -134,7 +153,7 @@ def main():
     blast = []
 
     max_prog_bar = 1 if len([loopCount for loopCount in open(blast_outfile,"r")])==0 else len([loopCount for loopCount in open(blast_outfile,"r")])
-    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 5/6', max=max_prog_bar)
+    status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 5/6', max=max_prog_bar)
     with open(blast_outfile,"r") as blast_res:
         for i in blast_res:
             blast.append(str(i).strip().split("\t"))
@@ -156,10 +175,10 @@ def main():
     fheader.append("Evalue")
     fheader = "\t".join(fheader)
 
-    with open(output_rep_file,"w") as blast_report:
+    with open(output_rep_file+".tsv","w") as blast_report:
         blast_report.write(fheader+"\n")
         max_prog_bar = 1 if len([loopCount for loopCount in blast])==0 else len([loopCount for loopCount in blast])
-        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] step 6/6', max=max_prog_bar)
+        status = FillingSquaresBar('['+str(datetime.now().strftime("%H:%M:%S"))+'] 6/6', max=max_prog_bar)
         for j in blast:
             for i in annotfiles:
                 annot = db[str(i)]
@@ -208,8 +227,8 @@ def main():
                         outp.append("N/A")
                         outp.append("N/A")
                         outp.append("")
-                        outp.append("Intergenic")
-                        outp.append("")
+                        outp.append("ZZZZZZZ")
+                        outp.append("ZZZZZZZ")
                         outp.append(str(j[10]))
                         outp = "\t".join(outp)
                         blast_report.write(outp+"\n")
@@ -220,27 +239,33 @@ def main():
         status.finish()
 
     with open(tmp_rscript_file,"w") as rhandle:
-        rhandle.write("""#!/usr/bin/env Rscript\n
-                       library(dplyr)\n
-                       library(magrittr)\n
-                       library(tidyr)\n
-                       MM<-dplyr::as_tibble(read.csv(\""+str(output_rep_file)+"\",header=T,sep=\"\\t\",comment.char=\"?\"))\n
-                       MM %>% dplyr::group_by(Variant) %>% arrange(MatchLength,Product,Variant) %>%\n 
-                       mutate(Product=ifelse(Product==\"\",\"ZZZZZZZ\",Product)) %>%\n
-                       mutate(Product=ifelse(Product==\"Intergenic region\",\"ZZZZZZZ\",Product)) %>%\n
-                       mutate(Product=ifelse(Product==\"Hypothetical protein\",\"ZZZZZZZ\",Product)) %>%\n
-                       mutate(Product=ifelse(Product==\"hypothetical protein\",\"ZZZZZZZ\",Product)) %>%\n
-                       dplyr::mutate(Product = tidyr::replace_na(Product, \"ZZZZZZZ\")) %>% \n
-                       dplyr::mutate(GeneID = tidyr::replace_na(GeneID, \"\")) %>%\n
-                       arrange(Variant,MatchLength,Product,Evalue) %>% \n
-                       dplyr::mutate(Annot.group = data.table::rleid(Product)) %>%\n
-                       dplyr::select(-Annot.group) %>% mutate(Product=ifelse(Product==\"ZZZZZZZ\",\"\",Product)) %>%\n
-                       dplyr::mutate(MostCommonProductOtherGenomes=names(rev(sort(table( Product )))[1]) ) %>%\n
-                       dplyr::mutate(MostCommonProductOtherGenomes=gsub(\"(^[[:alpha:]])\", \"\\U\\1\", MostCommonProductOtherGenomes, perl=TRUE)) %>%\n
-                       dplyr::mutate(Product=gsub(\"(^[[:alpha:]])\", \"\\U\\1\", Product, perl=TRUE)) %>% \n
-                       dplyr::filter(row_number()==1) %>%\n
-                       dplyr::mutate(MostCommonProductOtherGenomes=ifelse(MostCommonProductOtherGenomes==\"\",\"Intergenic region\",MostCommonProductOtherGenomes)) %>%\n
-                       dplyr::mutate(Product=ifelse(Product==\"ZZ\",\"Intergenic region\",Product)) %>% write.table(file=\"Summary."+str(output_rep_file)+"\",sep=\"\t\",row.names=FALSE)""")
+        rhandle.write("""\
+                       #!/usr/bin/env Rscript
+                       library(dplyr)
+                       library(magrittr)
+                       library(tidyr)
+                       library(stringr)
+                       MM<-dplyr::as_tibble(read.csv(\"{fname}\",header=T,sep=\"\\t\",comment.char=\"?\"))
+                       MM %>% mutate(Product=ifelse(Product==\"\",\"ZZZZZZZ\",Product)) %>%
+                       mutate(Product=ifelse(Product==\"Intergenic region\",\"ZZZZZZZ\",Product)) %>%
+                       mutate(Product=ifelse(Product==\"Intergenic region\",\"ZZZZZZZ\",Product)) %>%
+                       mutate(Product=ifelse(Product==\"Hypothetical protein\",\"ZZZZZZZ\",Product)) %>%
+                       mutate(Product=ifelse(Product==\"hypothetical protein\",\"ZZZZZZZ\",Product)) %>%
+                       dplyr::mutate(Product = tidyr::replace_na(Product, \"ZZZZZZZ\")) %>% 
+                       dplyr::mutate(GeneID = tidyr::replace_na(GeneID, \"\")) %>%
+                       group_by(Variant) %>% arrange(Variant,Product,MatchLength,Evalue) %>% 
+                       dplyr::mutate(Annot.group = row_number()) %>%
+                       dplyr::mutate(MostCommonFeatureInOtherGenomes=names(rev(sort(table( Product )))[1][1]) ) %>%
+                       mutate(Product=ifelse(Product==\"ZZZZZZZ\",\"Intergenic region\",Product)) %>%
+                       mutate(LocusTag=ifelse(LocusTag==\"ZZZZZZZ\",\"Intergenic region\",LocusTag)) %>%
+                       mutate(MostCommonFeatureInOtherGenomes=ifelse(MostCommonFeatureInOtherGenomes==\"ZZZZZZZ\",\"Intergenic region\",MostCommonFeatureInOtherGenomes)) %>%
+                       dplyr::filter(Annot.group==1) %>% dplyr::select(-Annot.group) %>% 
+                       dplyr::mutate(MostCommonFeatureInOtherGenomes=ifelse(MostCommonFeatureInOtherGenomes==\"\",\"Intergenic region\",MostCommonFeatureInOtherGenomes)) %>%
+                       dplyr::mutate(Product=ifelse(Product==\"ZZZZZZZ\",\"Intergenic region\",Product)) %>% ungroup() %>% rowwise() %>% 
+                       mutate(Product=paste0(toupper(substring(Product, 1,1)),paste0(str_split(Product,"")[[1]][-1],collapse=""),collapse="")) %>%
+                       mutate(MostCommonFeatureInOtherGenomes=paste0(toupper(substring(MostCommonFeatureInOtherGenomes, 1,1)),paste0(str_split(MostCommonFeatureInOtherGenomes,"")[[1]][-1],collapse=""),collapse="")) %>%
+                       write.table(file=\"Summary.{fname}\",sep=\"\t\",row.names=FALSE)\
+                       """.format(fname=str(output_rep_file)+".tsv"))
 
     rcmd = []
     rcmd.append("Rscript")
@@ -248,28 +273,19 @@ def main():
     rcmd = " ".join(rcmd)
     retval = subprocess.call(rcmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
 
-    cmd = []
-    cmd.append("rm -rf")
-    cmd.append(tmp_blast_output)
-    cmd.append(tmp_genome_names)
-    cmd.append(tmp_rscript_file)
-    cmd.append(rand_str_val+"*")
-    cmd = " ".join(cmd)
-    #retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
-
     variantList = ["Variant"]
     for r in SeqIO.parse(seq_kmers,"fasta"):
         variantList.append(str(r.id))
 
     variantData=[]
 
-    if os.path.exists("Summary."+str(output_rep_file)):
-        with open("Summary."+str(output_rep_file),'r') as fhandle:
+    if os.path.exists("Summary."+str(output_rep_file)+".tsv"):
+        with open("Summary."+str(output_rep_file)+".tsv",'r') as fhandle:
             for i in fhandle:
                 variantData.append(str(i).strip().replace('"','').split('\t'))
 
         check=False
-        with  open("Summary.final."+str(output_rep_file),'w') as fhandle:
+        with  open("Summary.final."+str(output_rep_file)+".tsv",'w') as fhandle:
             for k in variantList:
                 check=False
                 for l in variantData:
@@ -282,12 +298,22 @@ def main():
                     fhandle.write(str(k)+str("\t--"*(len(l)-1))+"\n")
 
     else:
-        with  open("Summary.final."+str(output_rep_file),'w') as fhandle:
-            headers=["Variant","Genome","MatchLength","GenomeStart","GenomeEnd","GeneStart","GeneEnd","GeneID","LocusTag","Product","Evalue","MostCommonProductOtherGenomes"]
+        with  open("Summary.final."+str(output_rep_file)+".tsv",'w') as fhandle:
+            headers=["Variant","Genome","MatchLength","GenomeStart","GenomeEnd","GeneStart","GeneEnd","GeneID","LocusTag","Product","Evalue","MostCommonFeatureInOtherGenomes"]
             fhandle.write("\t".join(headers)+"\n")
-
+    
             for i in SeqIO.parse(seq_kmers,"fasta"):
                 fhandle.write(str(i.id)+str("\t--"*(len(headers)-1))+"\n")
+
+    if not options.keep:
+        cmd = []
+        cmd.append("rm -rf")
+        cmd.append(tmp_dir)
+        cmd = " ".join(cmd)
+        retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
+
+        os.remove(str(output_rep_file)+".tsv")
+        os.remove("Summary."+str(output_rep_file)+".tsv")
 
 if __name__=="__main__":
     main()
