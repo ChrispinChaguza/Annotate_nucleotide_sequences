@@ -25,6 +25,7 @@ def main():
 
     seq_kmers=options.input_sequences[0:][0]
     gb_files=options.input_references[0:][0]
+
     output_rep_file=options.output_annotations_file[0:][0]
 
     rand_str_val="tmp."+str(randint(0,10000))+"."+str(randint(0,10000))
@@ -176,7 +177,8 @@ def main():
                                 gene = k.qualifiers['gene'][0]
                             if 'locus_tag' in k.qualifiers:
                                 locus=k.qualifiers['locus_tag'][0]
-                            if ((int(j[8])<=start) and (int(j[9])>=start)) or ((int(j[8])>=start) and (int(j[8])<=end)):
+                            if (((int(j[8])<=start) and (int(j[9])>=start)) or ((int(j[8])>=start) and (int(j[8])<=end)) or ((int(j[8])<=start) and (int(j[9])>=end)) or ((int(j[8])>=start) and (int(j[9])<=end)) \
+                                 or ((int(j[8])<=end) and (int(j[9])>=end)) or ((int(j[8])>=end) and (int(j[8])<=start)) or ((int(j[8])<=end) and (int(j[9])>=start)) or ((int(j[8])>=end) and (int(j[9])<=start)) ):
                                 outp = []
                                 outp.append(str(j[0]))
                                 outp.append(str(j[1]))
@@ -218,19 +220,27 @@ def main():
         status.finish()
 
     with open(tmp_rscript_file,"w") as rhandle:
-        rhandle.write("#!/usr/bin/env Rscript\n")
-        rhandle.write("library(dplyr)\n")
-        rhandle.write("library(magrittr)\n")
-        rhandle.write("library(tidyr)\n")
-        rhandle.write("MM<-dplyr::as_tibble(read.csv(\""+str(output_rep_file)+"\",header=T,sep=\"\\t\",comment.char=\"?\"))\n")
-        rhandle.write("MM %>% dplyr::group_by(Variant) %>% arrange(MatchLength,Product,Variant) %>% dplyr::mutate(Annot.group = data.table::rleid(Product)) %>%\n")
-        rhandle.write("dplyr::mutate(Product = tidyr::replace_na(Product, \"\")) %>% dplyr::mutate(GeneID = tidyr::replace_na(GeneID, \"\")) %>%\n")
-        rhandle.write("dplyr::arrange(MatchLength,Variant,Annot.group) %>% dplyr::mutate(MostCommonProductOtherGenomes=names(rev(sort(table( Product )))[1]) ) %>%\n")
-        rhandle.write("dplyr::arrange(desc(GeneID),MostCommonProductOtherGenomes) %>% arrange(MatchLength,Variant,Product,Evalue) %>%\n")
-        rhandle.write("dplyr::select(-Annot.group) %>% dplyr::mutate(MostCommonProductOtherGenomes=gsub(\"(^[[:alpha:]])\", \"\\\\U\\\\1\", MostCommonProductOtherGenomes, perl=TRUE)) %>%\n")
-        rhandle.write("dplyr::mutate(Product=gsub(\"(^[[:alpha:]])\", \"\\\\U\\\\1\", Product, perl=TRUE)) %>% dplyr::filter(row_number()==1) %>%\n")
-        rhandle.write("dplyr::mutate(MostCommonProductOtherGenomes=ifelse(MostCommonProductOtherGenomes==\"\",\"Intergenic region\",MostCommonProductOtherGenomes)) %>%\n")
-        rhandle.write("dplyr::mutate(Product=ifelse(Product==\"\",\"Intergenic region\",Product)) %>% write.table(file=\"Summary."+str(output_rep_file)+"\",sep=\"\t\",row.names=FALSE)")
+        rhandle.write("""#!/usr/bin/env Rscript\n
+                       library(dplyr)\n
+                       library(magrittr)\n
+                       library(tidyr)\n
+                       MM<-dplyr::as_tibble(read.csv(\""+str(output_rep_file)+"\",header=T,sep=\"\\t\",comment.char=\"?\"))\n
+                       MM %>% dplyr::group_by(Variant) %>% arrange(MatchLength,Product,Variant) %>%\n 
+                       mutate(Product=ifelse(Product==\"\",\"ZZZZZZZ\",Product)) %>%\n
+                       mutate(Product=ifelse(Product==\"Intergenic region\",\"ZZZZZZZ\",Product)) %>%\n
+                       mutate(Product=ifelse(Product==\"Hypothetical protein\",\"ZZZZZZZ\",Product)) %>%\n
+                       mutate(Product=ifelse(Product==\"hypothetical protein\",\"ZZZZZZZ\",Product)) %>%\n
+                       dplyr::mutate(Product = tidyr::replace_na(Product, \"ZZZZZZZ\")) %>% \n
+                       dplyr::mutate(GeneID = tidyr::replace_na(GeneID, \"\")) %>%\n
+                       arrange(Variant,MatchLength,Product,Evalue) %>% \n
+                       dplyr::mutate(Annot.group = data.table::rleid(Product)) %>%\n
+                       dplyr::select(-Annot.group) %>% mutate(Product=ifelse(Product==\"ZZZZZZZ\",\"\",Product)) %>%\n
+                       dplyr::mutate(MostCommonProductOtherGenomes=names(rev(sort(table( Product )))[1]) ) %>%\n
+                       dplyr::mutate(MostCommonProductOtherGenomes=gsub(\"(^[[:alpha:]])\", \"\\U\\1\", MostCommonProductOtherGenomes, perl=TRUE)) %>%\n
+                       dplyr::mutate(Product=gsub(\"(^[[:alpha:]])\", \"\\U\\1\", Product, perl=TRUE)) %>% \n
+                       dplyr::filter(row_number()==1) %>%\n
+                       dplyr::mutate(MostCommonProductOtherGenomes=ifelse(MostCommonProductOtherGenomes==\"\",\"Intergenic region\",MostCommonProductOtherGenomes)) %>%\n
+                       dplyr::mutate(Product=ifelse(Product==\"ZZ\",\"Intergenic region\",Product)) %>% write.table(file=\"Summary."+str(output_rep_file)+"\",sep=\"\t\",row.names=FALSE)""")
 
     rcmd = []
     rcmd.append("Rscript")
@@ -245,7 +255,7 @@ def main():
     cmd.append(tmp_rscript_file)
     cmd.append(rand_str_val+"*")
     cmd = " ".join(cmd)
-    ####retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
+    #retval = subprocess.call(cmd,shell=True,stdout=open(os.devnull,'w'),stderr=subprocess.STDOUT)
 
     variantList = ["Variant"]
     for r in SeqIO.parse(seq_kmers,"fasta"):
